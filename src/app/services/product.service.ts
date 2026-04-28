@@ -1,10 +1,16 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, catchError, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export interface Category {
   id?: number;
+  nom?: string;
+  name?: string;
+  description?: string;
+}
+
+export interface CategoryPayload {
   nom?: string;
   name?: string;
   description?: string;
@@ -85,6 +91,50 @@ export class ProductService {
   // ==========================
   getCategories(): Observable<Category[]> {
     return this.http.get<Category[]>(this.categoryUrl);
+  }
+
+  createCategory(payload: CategoryPayload): Observable<Category> {
+    return this.http.post<Category>(this.categoryUrl, payload);
+  }
+
+  updateCategory(id: number, payload: CategoryPayload): Observable<Category> {
+    return this.http.put<Category>(`${this.categoryUrl}/${id}`, payload);
+  }
+
+  deleteCategory(id: number): Observable<any> {
+    const byPath = `${this.categoryUrl}/${id}`;
+    const byDeleteSuffix = `${this.categoryUrl}/delete/${id}`;
+
+    return this.http.delete<any>(byPath).pipe(
+      catchError((error) => {
+        // 400 means backend accepted the endpoint and refused deletion (business rule),
+        // so do not probe other endpoints.
+        if (error?.status === 400) {
+          return throwError(() => error);
+        }
+
+        // Only retry alternate route patterns when endpoint mapping is likely the issue.
+        if (error?.status !== 404 && error?.status !== 405) {
+          return throwError(() => error);
+        }
+
+        return this.http.delete<any>(byDeleteSuffix).pipe(
+          catchError((suffixError) => {
+            if (suffixError?.status === 400) {
+              return throwError(() => suffixError);
+            }
+
+            if (suffixError?.status !== 404 && suffixError?.status !== 405) {
+              return throwError(() => suffixError);
+            }
+
+            return this.http.delete<any>(this.categoryUrl, {
+              params: new HttpParams().set('id', String(id))
+            });
+          })
+        );
+      })
+    );
   }
 
   // ==========================

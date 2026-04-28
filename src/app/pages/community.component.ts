@@ -3,23 +3,101 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LucideAngularModule, MessageCircle, Heart, Share2, TrendingUp, Plus, X, Loader2 } from 'lucide-angular';
 import { CommunityService } from '../services/community.service';
+import { ProductService, Category } from '../services/product.service';
+import { Team, TeamService } from '../services/team.service';
+import { forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+
+interface CommunityCard {
+  id: number;
+  name: string;
+  description: string;
+  teamCount: number;
+  memberCount: number;
+  access: 'ALL' | 'MEMBER';
+  category: Category;
+}
 
 @Component({
-    selector: 'app-community',
-    standalone: true,
-    imports: [CommonModule, FormsModule, LucideAngularModule],
-    template: `
+  selector: 'app-community',
+  standalone: true,
+  imports: [CommonModule, FormsModule, LucideAngularModule],
+  template: `
     <div class="min-h-screen bg-background p-4 md:p-6">
       <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-8">
           <div>
             <h1 class="mb-2">Communauté</h1>
-            <p class="text-muted-foreground">Connectez-vous avec d'autres joueurs</p>
+            <p class="text-muted-foreground">Les communautés sont générées à partir des catégories sportives</p>
           </div>
           <button (click)="openNewPost()" class="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all">
             <lucide-icon [name]="PlusIcon" [size]="16"></lucide-icon>
             Nouveau post
           </button>
+        </div>
+
+        <div class="grid gap-4 mb-8 lg:grid-cols-4">
+          <div class="lg:col-span-3 bg-card rounded-2xl p-6 border border-border">
+            <div class="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 class="mb-1">Communautés</h3>
+                <p class="text-sm text-muted-foreground">
+                  {{ isAdmin ? 'Vue complète pour l\'administrateur' : 'Vue limitée aux communautés validées par vos équipes' }}
+                </p>
+              </div>
+              <button (click)="reloadCommunities()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-muted border border-border hover:bg-muted/70 transition-colors text-sm">
+                <lucide-icon [name]="Loader2Icon" [size]="16" [class.animate-spin]="loadingCommunities"></lucide-icon>
+                Actualiser
+              </button>
+            </div>
+
+            <div *ngIf="loadingCommunities" class="flex items-center gap-2 text-muted-foreground text-sm py-8">
+              <lucide-icon [name]="Loader2Icon" [size]="18" class="animate-spin"></lucide-icon>
+              Chargement des communautés...
+            </div>
+
+            <div *ngIf="!loadingCommunities && visibleCommunities.length === 0" class="rounded-xl border border-dashed border-border p-6 text-center text-muted-foreground">
+              <p class="font-semibold mb-1">Aucune communauté visible</p>
+              <p class="text-sm">Les joueurs voient seulement les communautés correspondant aux équipes approuvées.</p>
+            </div>
+
+            <div *ngIf="!loadingCommunities && visibleCommunities.length > 0" class="grid gap-3 md:grid-cols-2">
+              <button
+                *ngFor="let community of visibleCommunities"
+                (click)="selectCommunity(community.id)"
+                class="text-left rounded-2xl border p-4 transition-all hover:shadow-lg"
+                [ngClass]="selectedCommunityId === community.id ? 'border-primary bg-primary/5' : 'border-border bg-muted/20'"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="font-semibold text-foreground mb-1">{{ community.name }}</div>
+                    <p class="text-xs text-muted-foreground line-clamp-2">{{ community.description || 'Aucune description' }}</p>
+                  </div>
+                  <div class="px-2 py-1 rounded-full text-[11px] font-semibold" [ngClass]="community.access === 'ALL' ? 'bg-emerald-500/15 text-emerald-700' : 'bg-amber-500/15 text-amber-700'">
+                    {{ community.access === 'ALL' ? 'Visible par tous' : 'Accès validé' }}
+                  </div>
+                </div>
+                <div class="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                  <span>{{ community.teamCount }} équipes</span>
+                  <span>{{ community.memberCount }} membres</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-card rounded-2xl p-6 border border-border">
+            <h3 class="mb-4">Visibilité</h3>
+            <div class="space-y-3 text-sm text-muted-foreground">
+              <div class="rounded-xl bg-muted/40 p-3 border border-border">
+                <div class="font-semibold text-foreground mb-1">Admin</div>
+                <div>Voit toutes les communautés générées à partir des catégories.</div>
+              </div>
+              <div class="rounded-xl bg-muted/40 p-3 border border-border">
+                <div class="font-semibold text-foreground mb-1">Utilisateur</div>
+                <div>Voit seulement les communautés des catégories où il est membre d'une équipe approuvée.</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- New Post Modal -->
@@ -30,6 +108,9 @@ import { CommunityService } from '../services/community.service';
               <button (click)="showNewPostModal = false" class="p-2 hover:bg-muted rounded-lg transition-colors">
                 <lucide-icon [name]="XIcon" [size]="18" class="text-muted-foreground"></lucide-icon>
               </button>
+            </div>
+            <div class="mb-3 text-sm text-muted-foreground">
+              Publication ciblée: {{ selectedCommunityName }}
             </div>
             <textarea [(ngModel)]="newPostContent" rows="4" placeholder="Partagez quelque chose avec la communauté..."
               class="w-full px-4 py-3 bg-muted border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground resize-none mb-4"></textarea>
@@ -55,7 +136,7 @@ import { CommunityService } from '../services/community.service';
               <p>Aucun post pour le moment. Soyez le premier !</p>
             </div>
 
-            <div *ngFor="let post of posts" class="bg-card rounded-2xl p-6 border border-border">
+            <div *ngFor="let post of filteredPosts" class="bg-card rounded-2xl p-6 border border-border">
               <div class="flex items-start gap-4 mb-4">
                 <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground font-bold shrink-0">
                   {{ getInitials(post.authorFirstName ? (post.authorFirstName + ' ' + post.authorLastName) : (post.authorName || post.author)) }}
@@ -161,165 +242,246 @@ import { CommunityService } from '../services/community.service';
   `,
 })
 export class CommunityComponent implements OnInit {
-    readonly MessageCircleIcon = MessageCircle;
-    readonly HeartIcon = Heart;
-    readonly Share2Icon = Share2;
-    readonly TrendingUpIcon = TrendingUp;
-    readonly PlusIcon = Plus;
-    readonly XIcon = X;
-    readonly Loader2Icon = Loader2;
+  readonly MessageCircleIcon = MessageCircle;
+  readonly HeartIcon = Heart;
+  readonly Share2Icon = Share2;
+  readonly TrendingUpIcon = TrendingUp;
+  readonly PlusIcon = Plus;
+  readonly XIcon = X;
+  readonly Loader2Icon = Loader2;
 
-    toast: string | null = null;
-    showNewPostModal = false;
-    newPostContent = '';
-    loading = true;
-    posting = false;
-    posts: any[] = [];
-    currentUserInitials = 'ME';
+  toast: string | null = null;
+  showNewPostModal = false;
+  newPostContent = '';
+  loading = true;
+  posting = false;
+  posts: any[] = [];
+  loadingCommunities = true;
+  communities: CommunityCard[] = [];
+  visibleCommunities: CommunityCard[] = [];
+  selectedCommunityId: number | null = null;
+  selectedCommunityName = 'Communauté globale';
+  currentRole = (localStorage.getItem('user_type') || '').toUpperCase();
+  currentUserId = Number(localStorage.getItem('user_id') || 0);
+  currentUserInitials = 'ME';
 
-    trending = [
-        { tag: '#football', posts: 234 },
-        { tag: '#basketball', posts: 128 },
-        { tag: '#recrutement', posts: 89 },
-        { tag: '#tournoi2026', posts: 76 },
-    ];
+  trending = [
+    { tag: '#football', posts: 234 },
+    { tag: '#basketball', posts: 128 },
+    { tag: '#recrutement', posts: 89 },
+    { tag: '#tournoi2026', posts: 76 },
+  ];
 
-    constructor(private communityService: CommunityService) {}
+  constructor(
+    private communityService: CommunityService,
+    private productService: ProductService,
+    private teamService: TeamService
+  ) { }
 
-    ngOnInit() {
-        this.currentUserInitials = this.getInitials(localStorage.getItem('user_name') || 'Moi');
-        this.loadPosts();
+  get isAdmin(): boolean {
+    return this.currentRole === 'ROLE_ADMIN' || this.currentRole === 'ADMIN';
+  }
+
+  get filteredPosts(): any[] {
+    if (this.selectedCommunityId === null) return this.posts;
+    const hasCommunityScopedPosts = this.posts.some((post) => {
+      const postCommunityId = post.communityId || post.community?.id || post.community?.communityId || null;
+      return postCommunityId !== null && postCommunityId !== undefined;
+    });
+
+    if (!hasCommunityScopedPosts) {
+      return this.posts;
     }
 
-    loadPosts() {
-        this.communityService.getGlobalPosts().subscribe({
-            next: (data: any) => {
-                this.posts = (data?.content ?? data ?? []).map((p: any) => ({
-                    ...p,
-                    // Parse from backend properties
-                    liked: p.likedByCurrentUser === true || p.isLikedByCurrentUser === true,
-                    showComment: false,
-                    commentInput: '',
-                    commentList: [],
-                    loadingComments: false,
-                    addingComment: false
-                }));
-                this.loading = false;
-            },
-            error: () => { this.loading = false; }
-        });
-    }
+    return this.posts.filter((post) => {
+      const postCommunityId = post.communityId || post.community?.id || post.community?.communityId || null;
+      return Number(postCommunityId) === Number(this.selectedCommunityId);
+    });
+  }
 
-    toggleLike(post: any) {
-        // Optimistic update
+  ngOnInit() {
+    this.currentUserInitials = this.getInitials(localStorage.getItem('user_name') || 'Moi');
+    this.loadCommunities();
+    this.loadPosts();
+  }
+
+  reloadCommunities(): void {
+    this.loadCommunities();
+  }
+  loadCommunities(): void {
+    this.loadingCommunities = true;
+
+    this.communityService.getCommunities().subscribe({
+      next: (communities) => {
+        this.visibleCommunities = (communities || []).map(c => ({
+          id: c.id,
+          name: c.name,
+          description: c.description || '',
+          teamCount: c.teamCount || 0,
+          memberCount: c.memberCount || 0,
+          access: (c.access as 'ALL' | 'MEMBER') || 'ALL',
+          category: { id: c.categoryId, nom: c.categoryName } as any
+        }));
+
+        this.communities = this.visibleCommunities;
+
+        if (this.visibleCommunities.length > 0 && this.selectedCommunityId === null) {
+          this.selectedCommunityId = this.visibleCommunities[0].id;
+          this.selectedCommunityName = this.visibleCommunities[0].name;
+        }
+
+        this.loadingCommunities = false;
+      },
+      error: () => {
+        this.communities = [];
+        this.visibleCommunities = [];
+        this.loadingCommunities = false;
+      }
+    });
+  }
+
+
+
+
+
+
+
+  selectCommunity(communityId: number): void {
+    this.selectedCommunityId = communityId;
+    const selected = this.visibleCommunities.find((community) => community.id === communityId);
+    this.selectedCommunityName = selected?.name || 'Communauté globale';
+  }
+
+  loadPosts() {
+    this.communityService.getGlobalPosts().subscribe({
+      next: (data: any) => {
+        this.posts = (data?.content ?? data ?? []).map((p: any) => ({
+          ...p,
+          // Parse from backend properties
+          liked: p.likedByCurrentUser === true || p.isLikedByCurrentUser === true,
+          showComment: false,
+          commentInput: '',
+          commentList: [],
+          loadingComments: false,
+          addingComment: false
+        }));
+        this.loading = false;
+      },
+      error: () => { this.loading = false; }
+    });
+  }
+
+  toggleLike(post: any) {
+    // Optimistic update
+    post.liked = !post.liked;
+    post.likesCount = (post.likesCount ?? 0) + (post.liked ? 1 : -1);
+
+    this.communityService.toggleLike(post.id).subscribe({
+      next: () => {
+        // Done
+      },
+      error: () => {
+        // Revert UI on error
         post.liked = !post.liked;
         post.likesCount = (post.likesCount ?? 0) + (post.liked ? 1 : -1);
+        this.showToast('Erreur lors de l\'ajout du like');
+      }
+    });
+  }
 
-        this.communityService.toggleLike(post.id).subscribe({
-            next: () => {
-                // Done
-            },
-            error: () => {
-                // Revert UI on error
-                post.liked = !post.liked;
-                post.likesCount = (post.likesCount ?? 0) + (post.liked ? 1 : -1);
-                this.showToast('Erreur lors de l\'ajout du like');
-            }
-        });
-    }
+  toggleComments(post: any) {
+    post.showComment = !post.showComment;
 
-    toggleComments(post: any) {
-        post.showComment = !post.showComment;
-        
-        if (post.showComment && (!post.commentList || post.commentList.length === 0)) {
-            post.loadingComments = true;
-            this.communityService.getComments(post.id).subscribe({
-                next: (comments) => {
-                    post.commentList = comments || [];
-                    post.loadingComments = false;
-                },
-                error: () => {
-                    post.loadingComments = false;
-                    this.showToast('Impossible de charger les commentaires');
-                }
-            });
+    if (post.showComment && (!post.commentList || post.commentList.length === 0)) {
+      post.loadingComments = true;
+      this.communityService.getComments(post.id).subscribe({
+        next: (comments) => {
+          post.commentList = comments || [];
+          post.loadingComments = false;
+        },
+        error: () => {
+          post.loadingComments = false;
+          this.showToast('Impossible de charger les commentaires');
         }
+      });
     }
+  }
 
-    addComment(post: any) {
-        if (!post.commentInput?.trim() || post.addingComment) return;
-        
-        const content = post.commentInput;
-        post.addingComment = true;
-        
-        this.communityService.addComment(post.id, { content }).subscribe({
-            next: (newComment) => {
-                post.commentsCount = (post.commentsCount ?? 0) + 1;
-                post.commentInput = '';
-                if (!post.commentList) post.commentList = [];
-                post.commentList.push(newComment);
-                post.addingComment = false;
-            },
-            error: () => {
-                post.addingComment = false;
-                this.showToast('Erreur lors de l\'envoi du commentaire');
-            }
+  addComment(post: any) {
+    if (!post.commentInput?.trim() || post.addingComment) return;
+
+    const content = post.commentInput;
+    post.addingComment = true;
+
+    this.communityService.addComment(post.id, { content }).subscribe({
+      next: (newComment) => {
+        post.commentsCount = (post.commentsCount ?? 0) + 1;
+        post.commentInput = '';
+        if (!post.commentList) post.commentList = [];
+        post.commentList.push(newComment);
+        post.addingComment = false;
+      },
+      error: () => {
+        post.addingComment = false;
+        this.showToast('Erreur lors de l\'envoi du commentaire');
+      }
+    });
+  }
+
+  openNewPost() {
+    this.newPostContent = '';
+    this.showNewPostModal = true;
+  }
+
+  submitPost() {
+    if (!this.newPostContent.trim()) return;
+    this.posting = true;
+    this.communityService.createPost({
+      content: this.newPostContent,
+      communityId: this.selectedCommunityId ?? undefined,
+      postType: this.selectedCommunityId ? 'COMMUNITY' : 'GENERAL'
+    }).subscribe({
+      next: (post: any) => {
+        this.posts.unshift({
+          ...post,
+          liked: false,
+          showComment: false,
+          commentInput: '',
+          commentList: [],
+          loadingComments: false,
+          addingComment: false
         });
-    }
-
-    openNewPost() {
+        this.showNewPostModal = false;
         this.newPostContent = '';
-        this.showNewPostModal = true;
-    }
+        this.posting = false;
+        this.showToast('Post publié ! 🎉');
+      },
+      error: () => {
+        this.posting = false;
+        this.showToast('Erreur lors de la publication');
+      }
+    });
+  }
 
-    submitPost() {
-        if (!this.newPostContent.trim()) return;
-        this.posting = true;
-        this.communityService.createPost({ 
-            content: this.newPostContent,
-            postType: 'GENERAL'
-        }).subscribe({
-            next: (post: any) => {
-                this.posts.unshift({ 
-                    ...post, 
-                    liked: false, 
-                    showComment: false, 
-                    commentInput: '',
-                    commentList: [],
-                    loadingComments: false,
-                    addingComment: false
-                });
-                this.showNewPostModal = false;
-                this.newPostContent = '';
-                this.posting = false;
-                this.showToast('Post publié ! 🎉');
-            },
-            error: () => {
-                this.posting = false;
-                this.showToast('Erreur lors de la publication');
-            }
-        });
-    }
+  getInitials(name: string): string {
+    if (!name || name.trim() === '') return '?';
+    const parts = name.trim().split(' ').filter(n => n.length > 0);
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
 
-    getInitials(name: string): string {
-        if (!name || name.trim() === '') return '?';
-        const parts = name.trim().split(' ').filter(n => n.length > 0);
-        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
+  formatDate(d: string): string {
+    if (!d) return '';
+    const date = new Date(d);
+    const diffMs = Date.now() - date.getTime();
+    const diffH = Math.floor(diffMs / 3600000);
+    if (diffH < 1) return 'À l\'instant';
+    if (diffH < 24) return `Il y a ${diffH}h`;
+    return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
 
-    formatDate(d: string): string {
-        if (!d) return '';
-        const date = new Date(d);
-        const diffMs = Date.now() - date.getTime();
-        const diffH = Math.floor(diffMs / 3600000);
-        if (diffH < 1) return 'À l\'instant';
-        if (diffH < 24) return `Il y a ${diffH}h`;
-        return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-    }
-
-    showToast(msg: string) {
-        this.toast = msg;
-        setTimeout(() => this.toast = null, 3000);
-    }
+  showToast(msg: string) {
+    this.toast = msg;
+    setTimeout(() => this.toast = null, 3000);
+  }
 }

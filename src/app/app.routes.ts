@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { PublicLayoutComponent } from './layout/public-layout/public-layout.component';
 import { AppLayoutComponent } from './layout/app-layout/app-layout.component';
 import { authGuard } from './core/guards/auth.guard';
+import { teamChatGuard } from './core/guards/team-chat.guard';
 import { UnsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 import { ProfileResolver } from './core/guards/profile.resolver';
 
@@ -20,17 +21,20 @@ import { PasswordResetPageComponent } from './pages/auth/password-reset-page.com
 import { UserDashboardComponent } from './pages/user-dashboard.component';
 import { HomeComponent } from './pages/home.component';
 import { TeamComponent } from './pages/team.component';
+import { TeamDetailComponent } from './pages/team-detail.component';
+import { TeamChatComponent } from './pages/team-chat.component';
+import { AdminTeamRequestsComponent } from './pages/admin-team-requests.component';
 import { MatchesComponent } from './pages/matches.component';
 import { MatchDetailComponent } from './pages/match-detail.component';
 import { MatchFormComponent } from './pages/match-form.component';
 import { BookingComponent } from './pages/booking.component';
 import { BookingFormComponent } from './pages/booking-form.component';
-import { CommunityComponent } from './pages/community.component';
 import { PerformanceComponent } from './pages/performance.component';
 import { SponsorsComponent } from './pages/sponsors.component';
 import { ProductDetailComponent } from './pages/product-detail.component';
 import { AdminComponent } from './pages/admin.component';
 import { AdminProductsComponent } from './pages/admin-products.component';
+import { AdminUsersComponent } from './pages/admin-users.component';
 import { UserProfileComponent } from './pages/user-profile.component';
 import { NotificationsComponent } from './pages/notifications.component';
 import { FavoritesComponent } from './pages/favorites.component';
@@ -97,17 +101,33 @@ export const routes: Routes = [
             { path: '', component: UserDashboardComponent },
             { path: 'home', component: HomeComponent },
             { path: 'team', component: TeamComponent },
+            { path: 'team/:id', component: TeamDetailComponent },
+            { path: 'team/:id/chat', component: TeamChatComponent, canActivate: [teamChatGuard] },
+            { path: 'admin/team-requests', component: AdminTeamRequestsComponent },
             { path: 'matches', component: MatchesComponent },
             { path: 'matches/new', component: MatchFormComponent },
             { path: 'matches/:id', component: MatchDetailComponent },
             { path: 'booking', component: BookingComponent },
             { path: 'booking-form/:id', component: BookingFormComponent },
-            { path: 'community', component: CommunityComponent },
+            { path: 'community', redirectTo: 'communities', pathMatch: 'full' },
+            {
+                path: 'communities',
+                loadComponent: () => import('./pages/communities.component').then((m) => m.CommunitiesComponent)
+            },
+            {
+                path: 'communities/:id',
+                loadComponent: () => import('./pages/communities.component').then((m) => m.CommunitiesComponent)
+            },
             { path: 'performance', component: PerformanceComponent },
             { path: 'sponsors', component: SponsorsComponent },
             { path: 'sponsors/:id', component: ProductDetailComponent },
             { path: 'admin', component: AdminComponent },
+            { path: 'admin/users', component: AdminUsersComponent },
             { path: 'admin/products', component: AdminProductsComponent },
+            {
+                path: 'admin/categories',
+                loadComponent: () => import('./pages/admin-categories.component').then((m) => m.AdminCategoriesComponent)
+            },
             
             // Admin - Badge Management (specific routes before parameter-based routes)
             { path: 'admin/badges/dashboard', component: BadgeDashboardComponent },
@@ -122,6 +142,11 @@ export const routes: Routes = [
             { path: 'admin/performances/:id/edit', component: PerformanceFormComponent },
             { path: 'admin/performances/:id', component: PerformanceDetailComponent },
             { path: 'admin/performances', component: PerformanceListComponent },
+            
+            { 
+                path: 'smart-matching', 
+                loadComponent: () => import('./pages/smart-matching.component').then(m => m.SmartMatchingComponent) 
+            },
             
             { path: 'user-profile', component: UserProfileComponent, resolve: { profile: ProfileResolver }, canDeactivate: [UnsavedChangesGuard] },
             { path: 'notifications', component: NotificationsComponent },

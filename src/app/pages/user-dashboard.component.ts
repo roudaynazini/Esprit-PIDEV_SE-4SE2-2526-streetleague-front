@@ -216,9 +216,9 @@ export class UserDashboardComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.userName = localStorage.getItem('user_name') || 'Utilisateur';
 
-    const userId = localStorage.getItem('user_id') || '1';
+    this.bookingService.loadMyReservations();
     this.subs.add(
-      this.bookingService.getUserReservations(userId).subscribe(reservations => {
+      this.bookingService.myReservations$.subscribe(reservations => {
         this.upcomingMatches = reservations.filter(r => r.status === 'confirmed');
       })
     );

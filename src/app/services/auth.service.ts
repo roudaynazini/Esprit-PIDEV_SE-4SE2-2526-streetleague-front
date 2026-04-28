@@ -21,6 +21,13 @@ export class AuthService {
             tap(res => {
                 if (res && res.token) {
                     localStorage.setItem('auth_token', res.token);
+
+                    // Store user_id as early as possible when token contains a numeric claim.
+                    const tokenPayload = this.decodeJwtPayload(res.token);
+                    const tokenUserId = this.extractUserId(tokenPayload);
+                    if (tokenUserId) {
+                        localStorage.setItem('user_id', String(tokenUserId));
+                    }
                 }
                 if (res && res.role) {
                     localStorage.setItem('user_type', res.role);
@@ -28,6 +35,13 @@ export class AuthService {
                 if (res && res.email) {
                     localStorage.setItem('user_email', res.email);
                 }
+
+                // Some backends return user id directly in login response.
+                const responseUserId = this.extractUserId(res?.user) || this.extractUserId(res);
+                if (responseUserId) {
+                    localStorage.setItem('user_id', String(responseUserId));
+                }
+
                 // Fetch user details to get the ID (needed for user-specific API calls)
                 if (res && res.email) {
                     this.http.get<any>(`${environment.apiUrl}/users/email/${encodeURIComponent(res.email)}`, {
@@ -78,4 +92,27 @@ export class AuthService {
     requestPasswordReset(email: string) {
     return this.http.post(`${environment.apiUrl}/auth/password/forgot-password`, { email });
 }
+
+    private decodeJwtPayload(token: string): any | null {
+        try {
+            const payload = token.split('.')[1];
+            return JSON.parse(atob(payload));
+        } catch {
+            return null;
+        }
+    }
+
+    private extractUserId(source: any): number | null {
+        if (!source || typeof source !== 'object') return null;
+
+        const candidates = [source.id, source.userId, source.uid, source.sub];
+        for (const value of candidates) {
+            const n = Number(value);
+            if (Number.isFinite(n) && n > 0) {
+                return n;
+            }
+        }
+
+        return null;
+    }
 }

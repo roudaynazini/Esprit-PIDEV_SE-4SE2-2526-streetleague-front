@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap, map, catchError, of, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { ApiService } from './api.service';
 
 export interface Field {
     id: string;
@@ -44,6 +45,8 @@ export interface Notification {
 })
 export class BookingService {
     private apiUrl = environment.apiUrl;
+    private loadReservationsRetryHandle: ReturnType<typeof setTimeout> | null = null;
+    private loadReservationsRetryCount = 0;
 
     private fieldsSubject = new BehaviorSubject<Field[]>([]);
     private notificationsSubject = new BehaviorSubject<Notification[]>([]);
@@ -53,7 +56,7 @@ export class BookingService {
     public notifications$ = this.notificationsSubject.asObservable();
     public myReservations$ = this.myReservationsSubject.asObservable();
 
-    constructor(private http: HttpClient) {
+    constructor(private http: HttpClient, private api: ApiService) {
         this.loadFields();
         this.loadStaticNotifications();
         this.loadMyReservations();
@@ -107,12 +110,28 @@ export class BookingService {
     }
 
     public loadMyReservations() {
-        const storedId = localStorage.getItem('user_id');
-        console.log('🔄 loadMyReservations() appelée pour userId:', storedId);
-        if (!storedId) {
-            console.warn('⚠️ Pas de user_id dans localStorage');
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            // Not logged in yet: avoid noisy warning at startup.
             return;
         }
+
+        const storedId = this.resolveCurrentUserId();
+        if (!storedId) {
+            // Auth token may exist while user profile hydration is still in progress.
+            if (this.loadReservationsRetryCount < 3 && this.loadReservationsRetryHandle === null) {
+                this.loadReservationsRetryCount += 1;
+                this.loadReservationsRetryHandle = setTimeout(() => {
+                    this.loadReservationsRetryHandle = null;
+                    this.loadMyReservations();
+                }, 800);
+            }
+            return;
+        }
+
+        this.loadReservationsRetryCount = 0;
+
+        console.log('🔄 loadMyReservations() appelée pour userId:', storedId);
         this.getUserReservations(storedId).subscribe({
             next: (res) => {
                 console.log('✅ Réservations chargées depuis backend:', res.length, 'réservations');
@@ -183,8 +202,12 @@ export class BookingService {
     }
 
     public reserveField(reservationData: Omit<Reservation, 'id' | 'status'>): Observable<any> {
-        const storedId = localStorage.getItem('user_id');
-        const userId = storedId ? parseInt(storedId, 10) : 1;
+        const storedId = this.resolveCurrentUserId();
+        const userId = storedId ? parseInt(storedId, 10) : NaN;
+
+        if (!Number.isFinite(userId)) {
+            return throwError(() => new Error('Utilisateur non identifié (user_id manquant). Reconnectez-vous puis réessayez.'));
+        }
 
         const startParts = reservationData.time.split(':');
         const startDate = new Date(reservationData.date);
@@ -245,6 +268,37 @@ export class BookingService {
                 return throwError(() => err);
             })
         );
+    }
+
+    private extractUserId(source: any): number | null {
+        if (!source || typeof source !== 'object') return null;
+
+        const candidates = [source.id, source.userId, source.uid, source.sub];
+        for (const value of candidates) {
+            const n = Number(value);
+            if (Number.isFinite(n) && n > 0) {
+                return n;
+            }
+        }
+
+        return null;
+    }
+
+    private resolveCurrentUserId(): string | null {
+        const storedId = localStorage.getItem('user_id');
+        if (storedId && Number.isFinite(Number(storedId)) && Number(storedId) > 0) {
+            return storedId;
+        }
+
+        const tokenPayload = this.api.decodeToken();
+        const decodedId = this.extractUserId(tokenPayload);
+        if (decodedId) {
+            const normalized = String(decodedId);
+            localStorage.setItem('user_id', normalized);
+            return normalized;
+        }
+
+        return null;
     }
 
     public cancelReservation(reservationId: number): Observable<any> {

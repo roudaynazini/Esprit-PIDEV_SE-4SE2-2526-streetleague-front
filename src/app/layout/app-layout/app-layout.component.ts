@@ -4,7 +4,7 @@ import { RouterOutlet, RouterModule, Router } from '@angular/router';
 import {
     LucideAngularModule, Home, Users, Trophy, MapPin,
     MessageSquare, Activity, Gift, Settings, Map,
-    LogOut, Menu, X, Bell, User, Heart, ShoppingCart, Swords
+    LogOut, Menu, X, Bell, User, Heart, ShoppingCart, Swords, Tags
 } from 'lucide-angular';
 import { AuthService } from '../../services/auth.service';
 import { PendingChangesService } from '../../services/pending-changes.service';
@@ -39,10 +39,13 @@ export class AppLayoutComponent implements OnInit {
     readonly HeartIcon = Heart;
     readonly ShoppingCartIcon = ShoppingCart;
     readonly SwordsIcon = Swords;
+    readonly TagsIcon = Tags;
 
     navItems = [
         { path: '/app', icon: this.HomeIcon, label: 'Dashboard Admin', roles: ['ROLE_ADMIN'] },
         { path: '/app/admin', icon: this.SettingsIcon, label: 'Admin', roles: ['ROLE_ADMIN'] },
+        { path: '/app/admin/users', icon: this.UsersIcon, label: 'Users', roles: ['ROLE_ADMIN'] },
+        { path: '/app/admin/categories', icon: this.TagsIcon, label: 'Categories', roles: ['ROLE_ADMIN'] },
         { path: '/app/home', icon: this.HomeIcon, label: 'Accueil' },
         { path: '/app/fields/add', icon: this.MapPinIcon, label: 'Ajouter un Terrain', roles: ['ROLE_FIELD_OWNER', 'ROLE_ADMIN'] },
         { path: '/app/team', icon: this.UsersIcon, label: 'Équipes' },
@@ -50,9 +53,10 @@ export class AppLayoutComponent implements OnInit {
         { path: '/app/matches', icon: this.SwordsIcon, label: 'Matchs' },
         { path: '/app/booking', icon: this.MapPinIcon, label: 'Réservation' },
         { path: '/app/fields', icon: this.MapIcon, label: 'Terrains', roles: ['ROLE_FIELD_OWNER', 'ROLE_ADMIN'] },
-        { path: '/app/community', icon: this.MessageSquareIcon, label: 'Communauté' },
+        { path: '/app/communities', icon: this.MessageSquareIcon, label: 'Communautés' },
         { path: '/app/performance', icon: this.ActivityIcon, label: 'Performance' },
         { path: '/app/healthcare', icon: this.HeartIcon, label: 'Santé' },
+        { path: '/app/smart-matching', icon: this.SwordsIcon, label: 'Smart Match' },
         { path: '/app/sponsors', icon: this.GiftIcon, label: 'Sponsors (Boutique)' },
         { path: '/app/favorites', icon: this.HeartIcon, label: 'Mes Favoris' },
         { path: '/app/user-profile', icon: this.UserIcon, label: 'Mon Profil' },

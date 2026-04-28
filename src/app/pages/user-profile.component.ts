@@ -1,9 +1,10 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, User, Mail, Phone, MapPin, Camera, Edit, Shield, Bell, LogOut, X } from 'lucide-angular';
+import { LucideAngularModule, User, Mail, Phone, MapPin, Camera, Edit, Shield, Bell, LogOut, X, Activity } from 'lucide-angular';
 import { Router, ActivatedRoute } from '@angular/router';
 import { UserService } from '../services/user.service';
+import { PlayerService } from '../services/player.service';
 import { PendingChangesService } from '../services/pending-changes.service';
 
 @Component({
@@ -60,6 +61,28 @@ import { PendingChangesService } from '../services/pending-changes.service';
               </button>
             </div>
 
+            <!-- Player Info Display -->
+            <div *ngIf="!editing && isPlayer" class="mt-4 pt-4 border-t border-border/50 grid grid-cols-2 gap-4">
+              <div>
+                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Niveau</p>
+                <p class="text-sm font-medium text-foreground">
+                  <span class="inline-flex items-center px-2 py-1 rounded bg-primary/10 text-primary">
+                    <lucide-icon [img]="ActivityIcon" [size]="14" class="mr-1"></lucide-icon>
+                    Level {{profile.skillLevel}}
+                  </span>
+                </p>
+              </div>
+              <div>
+                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Position</p>
+                <p class="text-sm font-medium text-foreground">
+                  <span class="inline-flex items-center px-2 py-1 rounded bg-secondary/10 text-secondary">
+                    <lucide-icon [img]="locationIcon" [size]="14" class="mr-1"></lucide-icon>
+                    {{profile.position || 'ANY'}}
+                  </span>
+                </p>
+              </div>
+            </div>
+
             <div *ngIf="editing" class="space-y-4">
               <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -81,8 +104,32 @@ import { PendingChangesService } from '../services/pending-changes.service';
               </div>
               <div>
                 <label class="block text-xs font-medium text-foreground mb-2">Mot de passe (pour confirmer)</label>
-                <input type="password" [(ngModel)]="editedProfile.password" placeholder="Votre mot de passe" class="w-full px-3 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm">
+                <input type="password" [(ngModel)]="editedProfile.password" (ngModelChange)="onProfileFieldChange()" placeholder="Votre mot de passe" class="w-full px-3 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm">
                 <p class="text-xs text-muted-foreground mt-1">Le mot de passe est requis pour protéger votre compte</p>
+              </div>
+
+              <!-- Player specific fields form -->
+              <div *ngIf="isPlayer" class="grid grid-cols-2 gap-3 pt-2 border-t border-border/50 mt-2">
+                <div>
+                  <label class="block text-xs font-medium text-foreground mb-2">Niveau (1-5)</label>
+                  <select [(ngModel)]="editedProfile.skillLevel" (ngModelChange)="onProfileFieldChange()" class="w-full px-3 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm">
+                    <option [value]="1">1 - Débutant</option>
+                    <option [value]="2">2 - Amateur</option>
+                    <option [value]="3">3 - Intermédiaire</option>
+                    <option [value]="4">4 - Avancé</option>
+                    <option [value]="5">5 - Pro</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-foreground mb-2">Position</label>
+                  <select [(ngModel)]="editedProfile.position" (ngModelChange)="onProfileFieldChange()" class="w-full px-3 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary text-sm">
+                    <option value="DEFENDER">Défenseur</option>
+                    <option value="MIDFIELDER">Milieu</option>
+                    <option value="STRIKER">Attaquant</option>
+                    <option value="GOALKEEPER">Gardien</option>
+                    <option value="ANY">Peu importe</option>
+                  </select>
+                </div>
               </div>
               <div class="flex gap-2 pt-2">
                 <button (click)="saveProfile()" [disabled]="savingProfile || !editedProfile.password" class="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 transition-colors disabled:opacity-50">
@@ -142,8 +189,10 @@ export class UserProfileComponent implements OnInit, OnDestroy {
     readonly editIcon = Edit;
     readonly shieldIcon = Shield;
     readonly bellIcon = Bell;
+    readonly ActivityIcon = Activity;
 
     editing = false;
+    isPlayer = false;
     savingProfile = false;
     uploadingImage = false;
     notificationMessage = '';
@@ -154,20 +203,28 @@ export class UserProfileComponent implements OnInit, OnDestroy {
     profileImageUrl: string | null = null;
     private profileImageObjectUrl: string | null = null;
 
-    profile = {
+    profile: any = {
         firstName: '',
         lastName: '',
         role: '',
         email: '',
-        phone: ''
+        phone: '',
+        skillLevel: 1,
+        position: 'ANY',
+        rating: 0,
+        gamesPlayed: 0
     };
 
-    editedProfile = {
+    editedProfile: any = {
         firstName: '',
         lastName: '',
         email: '',
         phone: '',
-        password: ''  // Pour la confirmation de sécurité
+        password: '',
+        skillLevel: 1,
+        position: 'ANY',
+        rating: 0,
+        gamesPlayed: 0
     };
 
     stats = [
@@ -197,29 +254,29 @@ export class UserProfileComponent implements OnInit, OnDestroy {
         }
     ];
 
-    constructor(private userService: UserService, private router: Router, private activatedRoute: ActivatedRoute, private pendingChangesService: PendingChangesService) {}
+    constructor(private userService: UserService, private playerService: PlayerService, private router: Router, private activatedRoute: ActivatedRoute, private pendingChangesService: PendingChangesService) { }
 
     ngOnInit() {
         // Register this component with the pending changes service for auto-save on logout
         this.pendingChangesService.registerProfileComponent(this);
-        
+
         // ÉTAPE 1: Récupérer le profil depuis le resolver (données déjà chargées AVANT le composant)
         const resolvedProfile = this.activatedRoute.snapshot.data['profile'];
-        
+
         // ÉTAPE 2: Vérifier les changements sauvegardés dans localStorage
         const savedChangesStr = localStorage.getItem('userProfilePendingChanges');
         const currentUserId = localStorage.getItem('user_id');
-        
+
         let hasSavedChanges = false;
-        
+
         if (savedChangesStr && currentUserId) {
             try {
                 const saved = JSON.parse(savedChangesStr);
-                
+
                 // Vérifier que les changements sont pour l'utilisateur actuel
                 if (saved.userId === currentUserId) {
                     console.log('📝 Changements sauvegardés trouvés pour cet utilisateur:', saved);
-                    
+
                     // Restaurer les données sauvegardées
                     this.editedProfile = saved.profile;
                     this.profile = {
@@ -232,7 +289,7 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                     this.hasUnsavedChanges = true;
                     this.editing = true;
                     hasSavedChanges = true;
-                    
+
                     console.log('✅ Changements restaurés - Mode édition activé');
                     this.showNotification('📝 Vos modifications précédentes ont été restaurées', 'success');
                 }
@@ -240,11 +297,11 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                 console.error('Erreur lors de la lecture des changements sauvegardés:', e);
             }
         }
-        
+
         // ÉTAPE 3: Utiliser les données du resolver si pas de changements sauvegardés
         if (!hasSavedChanges && resolvedProfile) {
             this.profile = resolvedProfile;
-            this.editedProfile = { 
+            this.editedProfile = {
                 firstName: resolvedProfile.firstName || '',
                 lastName: resolvedProfile.lastName || '',
                 email: resolvedProfile.email || '',
@@ -253,10 +310,33 @@ export class UserProfileComponent implements OnInit, OnDestroy {
             };
             console.log('📥 Profil du resolver chargé et affichage immédiat');
         }
-        
+
         // ÉTAPE 4: Les données sont maintenant prêtes, arrêter le chargement
         this.isLoading = false;
-        
+
+        // Setup Player specific data
+        const type = localStorage.getItem('user_type');
+        this.isPlayer = type === 'ROLE_PLAYER' || type === 'player' || resolvedProfile?.role === 'ROLE_PLAYER';
+
+        if (this.isPlayer && currentUserId && !hasSavedChanges) {
+            this.playerService.getById(parseInt(currentUserId, 10)).subscribe({
+                next: (p) => {
+                    this.profile.skillLevel = p.skillLevel || 1;
+                    this.profile.position = p.position || 'ANY';
+                    this.profile.rating = p.rating || 0;
+                    this.profile.gamesPlayed = p.gamesPlayed || 0;
+
+                    this.editedProfile.skillLevel = this.profile.skillLevel;
+                    this.editedProfile.position = this.profile.position;
+                    this.editedProfile.rating = this.profile.rating;
+                    this.editedProfile.gamesPlayed = this.profile.gamesPlayed;
+
+                    this.stats[0].value = this.profile.gamesPlayed.toString();
+                },
+                error: (e) => console.log('Could not fetch player details', e)
+            });
+        }
+
         // ÉTAPE 5: Charger la photo de profil via HttpClient pour inclure le token d'authentification
         this.loadProfileImage();
     }
@@ -268,15 +348,15 @@ export class UserProfileComponent implements OnInit, OnDestroy {
 
     startEditing() {
         this.editing = true;
-        
+
         // Si on a déjà des changements en attente, ne pas les perdre
         if (this.hasUnsavedChanges) {
             console.log('ℹ️ Changements en attente conservés');
             return;
         }
-        
+
         // Sinon, initialiser avec les données actuelles du profil
-        this.editedProfile = { 
+        this.editedProfile = {
             firstName: this.profile.firstName || '',
             lastName: this.profile.lastName || '',
             email: this.profile.email || '',
@@ -307,18 +387,20 @@ export class UserProfileComponent implements OnInit, OnDestroy {
      */
     onProfileFieldChange() {
         // Detect if there are actual changes (ignore whitespace)
-        const hasChanges = 
+        const hasChanges =
             (this.editedProfile.firstName || '').trim() !== (this.profile.firstName || '').trim() ||
             (this.editedProfile.lastName || '').trim() !== (this.profile.lastName || '').trim() ||
             (this.editedProfile.email || '').trim() !== (this.profile.email || '').trim() ||
-            (this.editedProfile.phone || '').trim() !== (this.profile.phone || '').trim();
+            (this.editedProfile.phone || '').trim() !== (this.profile.phone || '').trim() ||
+            (this.editedProfile.skillLevel !== this.profile.skillLevel) ||
+            (this.editedProfile.position !== this.profile.position);
 
         if (hasChanges) {
             this.hasUnsavedChanges = true;
-            
+
             // Get current user ID
             const userId = localStorage.getItem('user_id');
-            
+
             // Save with userId so changes are tied to the user
             const dataToSave = {
                 userId: userId,
@@ -331,7 +413,7 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                 },
                 lastModified: Date.now()
             };
-            
+
             // Use permanent key that survives navigation and logout
             localStorage.setItem('userProfilePendingChanges', JSON.stringify(dataToSave));
             console.log('💾 Changements SAUVEGARDÉS DÉFINITIVEMENT (persisteront après reconnexion):', dataToSave.profile);
@@ -351,43 +433,39 @@ export class UserProfileComponent implements OnInit, OnDestroy {
         }
 
         this.savingProfile = true;
-        this.userService.updateUserProfile(this.editedProfile).subscribe({
+
+        const saveReq = this.isPlayer
+            ? this.playerService.update(parseInt(localStorage.getItem('user_id')!, 10), this.editedProfile)
+            : this.userService.updateUserProfile(this.editedProfile);
+
+        saveReq.subscribe({
             next: () => {
                 // ✅ SUCCÈS: Synchroniser l'état
-                this.profile = { 
-                    firstName: this.editedProfile.firstName,
-                    lastName: this.editedProfile.lastName,
-                    email: this.editedProfile.email,
-                    phone: this.editedProfile.phone,
+                this.profile = {
+                    ...this.editedProfile,
                     role: this.profile.role
                 };
-                
+
                 // Réinitialiser pour la prochaine édition
-                this.editedProfile = {
-                    firstName: this.profile.firstName,
-                    lastName: this.profile.lastName,
-                    email: this.profile.email,
-                    phone: this.profile.phone,
-                    password: ''
-                };
-                
+                this.editedProfile = { ...this.profile, password: '' };
+
                 this.editing = false;
                 this.hasUnsavedChanges = false;
                 this.savingProfile = false;
-                
+
                 // 🗑️ Nettoyer TOUTES les clés de changements sauvegardés (définitif et temporaire)
                 localStorage.removeItem('userProfilePendingChanges');
                 localStorage.removeItem('pendingProfileChanges');
                 sessionStorage.removeItem('pendingProfileSave');
-                
+
                 console.log('✅ Profil SAUVEGARDÉ avec succès - Changements nettoyés');
                 this.showNotification('✅ Profil mise à jour avec succès!', 'success');
             },
             error: (err) => {
                 this.savingProfile = false;
-                
+
                 let errorMsg = '❌ Erreur lors de la mise à jour du profil';
-                
+
                 if (err?.error?.password) {
                     errorMsg = `❌ ${err.error.password}`;
                 } else if (err?.error?.email) {
@@ -401,7 +479,7 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                 } else if (err?.status === 403) {
                     errorMsg = '❌ Accès refusé (403) - Le backend a refusé votre demande';
                 }
-                
+
                 // ⚠️ ERREUR: Garder leschangements sauvegardés pour nouvelle tentative
                 console.error('Erreur lors de la sauvegarde:', err);
                 this.showNotification(errorMsg, 'error');
@@ -413,7 +491,7 @@ export class UserProfileComponent implements OnInit, OnDestroy {
         const input = event.target as HTMLInputElement;
         if (input.files && input.files[0]) {
             const file = input.files[0];
-            
+
             // Vérifier la taille (max 5MB)
             if (file.size > 5 * 1024 * 1024) {
                 this.showNotification('❌ Image trop grande (max 5MB)', 'error');
@@ -438,14 +516,14 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                 error: (err) => {
                     this.uploadingImage = false;
                     let errorMsg = '❌ Erreur lors du téléchargement';
-                    
+
                     console.error('Upload error details:', {
                         status: err.status,
                         statusText: err.statusText,
                         message: err.message,
                         error: err.error
                     });
-                    
+
                     if (err.status === 403) {
                         errorMsg = '❌ Accès refusé (403) - Permissions insuffisantes';
                         console.error('🔐 403 Forbidden: Le backend refuse l\'accès à POST /api/users/{userId}/profile-image');
@@ -465,7 +543,7 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                     } else {
                         errorMsg = `❌ Erreur ${err.status}: ${err.statusText || 'Inconnue'}`;
                     }
-                    
+
                     this.showNotification(errorMsg, 'error');
                     console.error('Error uploading image:', err);
                 }
@@ -488,34 +566,41 @@ export class UserProfileComponent implements OnInit, OnDestroy {
             console.log('ℹ️ Pas de changements à sauvegarder automatiquement');
             return;
         }
-        
+
         // Detect if there are actual changes (compare without password field)
-        const hasChanges = 
+        const hasChanges =
             (this.editedProfile.firstName || '').trim() !== (this.profile.firstName || '').trim() ||
             (this.editedProfile.lastName || '').trim() !== (this.profile.lastName || '').trim() ||
             (this.editedProfile.email || '').trim() !== (this.profile.email || '').trim() ||
-            (this.editedProfile.phone || '').trim() !== (this.profile.phone || '').trim();
-        
+            (this.editedProfile.phone || '').trim() !== (this.profile.phone || '').trim() ||
+            (this.editedProfile.skillLevel !== this.profile.skillLevel) ||
+            (this.editedProfile.position !== this.profile.position);
+
         if (!hasChanges) {
             console.log('ℹ️ Aucun changement réel détecté');
             return;
         }
-        
+
         console.log('🔄 Tentative de sauvegarde automatique avant déconnexion...');
-        
+
         // If password not provided, just keep the local changes
         if (!this.editedProfile.password || this.editedProfile.password.trim() === '') {
             console.log('⚠️ Mot de passe manquant - changements gardés localement');
             return;
         }
-        
+
         this.savingProfile = true;
-        this.userService.updateUserProfile(this.editedProfile).subscribe({
+        const autoSaveReq = this.isPlayer
+            ? this.playerService.update(parseInt(localStorage.getItem('user_id')!, 10), this.editedProfile)
+            : this.userService.updateUserProfile(this.editedProfile);
+
+        autoSaveReq.subscribe({
             next: () => {
                 this.profile = { ...this.editedProfile, role: this.profile.role };
                 this.editing = false;
                 this.hasUnsavedChanges = false;
                 this.savingProfile = false;
+                localStorage.removeItem('userProfilePendingChanges');
                 localStorage.removeItem('pendingProfileChanges');
                 sessionStorage.removeItem('pendingProfileSave');
                 console.log('✅ Profil auto-sauvegardé avec succès avant déconnexion');
@@ -552,14 +637,17 @@ export class UserProfileComponent implements OnInit, OnDestroy {
                 console.log('✅ URL locale de photo de profil définie');
             },
             error: (err) => {
-                console.error('❌ Erreur lors du chargement de la photo de profil:', err);
                 this.revokeProfileImageObjectUrl();
                 this.profileImageUrl = null;
 
-                if (err.status === 403) {
-                    console.warn('⚠️ Accès refusé (403) lors du chargement authentifié de la photo');
-                } else if (err.status === 404) {
-                    console.log('ℹ️ Aucune photo de profil trouvée - Utilisation de l\'icône par défaut');
+                if (err.status === 404) {
+                    // Pas de photo → normal, pas d'erreur
+                    console.log('ℹ️ Aucune photo de profil - icône par défaut');
+                } else if (err.status === 403) {
+                    console.warn('⚠️ Accès refusé (403) lors du chargement de la photo');
+                } else {
+                    // Seulement logger en erreur pour les vrais problèmes
+                    console.error('❌ Erreur chargement photo:', err);
                 }
             }
         });
